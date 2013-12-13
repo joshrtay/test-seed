@@ -6,6 +6,6 @@ rm -f .gitignore
 grunt build
 git add -A
 git commit -am "deploying"
-git push heroku master
+git push -f heroku master
 git checkout master
 git branch -D deploy 
