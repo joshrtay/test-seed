@@ -10,7 +10,6 @@
     "jade": "~0.34.0",
     "browserify": "~2.35.4",
     "debowerify": "~0.3.0",
-    "deamdify": "~0.1.1",
     "esprima": "~1.0.4",
     "grunt-contrib-copy": "~0.4.1",
     "grunt-contrib-sass": "~0.5.1",
