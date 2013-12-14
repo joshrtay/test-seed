@@ -1,0 +1,15 @@
+{
+  
+  "name": "emitter",
+  "version": "1.5.1",
+  
+  "main": [
+    "emitter.js"
+  ],
+  
+  "ignore": [],
+  
+  "dependencies": {},
+  "devDependencies": {}
+  
+}

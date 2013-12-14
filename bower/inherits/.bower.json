@@ -1,0 +1,23 @@
+{
+  "name": "inherits",
+  "version": "0.0.1",
+  "main": "inherits.js",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "homepage": "https://github.com/fnobi/inherits",
+  "_release": "0.0.1",
+  "_resolution": {
+    "type": "version",
+    "tag": "0.0.1",
+    "commit": "bd3e403df64830e11def99b71dd56fccea404247"
+  },
+  "_source": "git://github.com/fnobi/inherits.git",
+  "_target": "~0.0.1",
+  "_originalSource": "inherits",
+  "_direct": true
+}
