@@ -1,5 +1,5 @@
 'use strict';
-//
+
 // TODO: does copying lib remove old lib in public?
 module.exports = function (grunt) {
   // show elapsed time at the end
@@ -72,12 +72,6 @@ module.exports = function (grunt) {
     },
     clean: {
       build: ['public/*']
-    },
-    copy: {
-      lib: {
-        src: 'lib/**',
-        dest: 'public/'
-      }
     },
     symlink: {
       lib: {
@@ -154,7 +148,7 @@ module.exports = function (grunt) {
     'develop', 'watchDeps', 'watch-dev']);
 
   // dev build
-  var buildTasks = ['symlink', 'clean:build', 'copy:lib', 'genCssImports'];
+  var buildTasks = ['symlink', 'node-assets:public/lib/', 'clean:build', 'genCssImports'];
   grunt.registerTask('dev-build', buildTasks.concat('shell:component-dev', 'sass:libDev'));
 
   // production build

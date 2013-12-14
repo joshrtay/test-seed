@@ -8,4 +8,4 @@ git add -A
 git commit -am "deploying"
 git push -f heroku master
 git checkout master
-git branch -D deploy 
+git branch -D deploy
