@@ -142,10 +142,8 @@ module.exports = function (grunt) {
   });
 
   // development task
-  grunt.registerTask('watch-dev', ['watch:component', 'watch:packageJsons', 
-    'watch:sass', 'watch:js', 'watch:css', 'watch:images', 'watch:jade']);
   grunt.registerTask('default', ['dev-build', 'watchify:app', 
-    'develop', 'watchDeps', 'watch-dev']);
+    'develop', 'watchDeps', 'watch']);
 
   // dev build
   var buildTasks = ['symlink', 'node-assets:public/lib/', 'clean:build', 'genCssImports'];
