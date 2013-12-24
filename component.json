@@ -2,10 +2,6 @@
   "name": "app",
   "remotes": [],
   "dependencies": {
-    "component/moment": "*",
-    "segmentio/modal": "*",
-    "stagas/mod-player": "*",
-    "CamShaft/bootstrap-sprites": "*",
-    "monstercat/rating": "*"
+    "component/emitter": "*"
   }
 }
