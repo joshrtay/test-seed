@@ -1,6 +1,8 @@
 {
   "name": "app",
   "remotes": [],
+  "scripts": [],
+  "styles": [],
   "dependencies": {
     "component/moment": "*",
     "segmentio/modal": "*",
