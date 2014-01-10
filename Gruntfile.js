@@ -148,7 +148,7 @@ module.exports = function (grunt) {
     'develop', 'watchDeps', 'watch']);
 
   // dev build
-  var buildTasks = ['symlink', 'node-assets:public/lib/', 'clean:build', 'genCssImports'];
+  var buildTasks = ['symlink', 'clean:build', 'genCssImports'];
   grunt.registerTask('dev-build', buildTasks.concat('shell:component-dev', 'sass:libDev'));
 
   // production build
