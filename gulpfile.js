@@ -145,7 +145,7 @@ gulp.task('bower-styl', function() {
   gulp.src('bower/**/bower.json')
     .pipe(es.through(pluckFilesFromJson('main')))
     .pipe(es.writeArray(function(err, arr) {
-      if (arr.length = 0) return deferred.resolve();
+      if (arr.length === 0) return deferred.resolve();
       gulp.src(arr)
         .pipe(tasks['grep-stream']('/**/*.css'))
         .pipe(es.mapSync(function(file) {
