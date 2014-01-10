@@ -121,7 +121,7 @@ function urlRewriter(file) {
 }
 
 gulp.task('styl', function() {
-  gulp.src('lib/**/*.styl')
+  return gulp.src('lib/**/*.styl')
     .pipe(es.mapSync(function(file) {
       var css = file.contents.toString('utf8');
       file.contents = new Buffer(rework(css)
@@ -141,9 +141,11 @@ gulp.task('styl', function() {
 });
 
 gulp.task('bower-styl', function() {
+  var deferred = Q.defer();
   gulp.src('bower/**/bower.json')
     .pipe(es.through(pluckFilesFromJson('main')))
     .pipe(es.writeArray(function(err, arr) {
+      console.log('array', arr);
       gulp.src(arr)
         .pipe(tasks['grep-stream']('/**/*.css'))
         .pipe(es.mapSync(function(file) {
@@ -157,8 +159,10 @@ gulp.task('bower-styl', function() {
         }))
         .on('error', logError)
         .pipe(tasks.concat('bower.css'))
-        .pipe(gulp.dest('public'));
+        .pipe(gulp.dest('public'))
+        .on('end', deferred.resolve);
     }));
+    return deferred.promise;
 })
 
 gulp.task('component', function() {
