@@ -1,8 +1,6 @@
 {
   "name": "app",
-  "remotes": [],
-  "scripts": [],
-  "styles": [],
   "dependencies": {
+    "component/emitter": "*"
   }
 }
