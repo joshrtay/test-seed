@@ -47,8 +47,6 @@ var browserResolve = require('browser-resolve')
   , moduleDeps = require('module-deps')
   , builtinLibs = require('repl')._builtinLibs;
 
-
-
 gulp.task('browserify', ['clean', 'link', 'component'], function() {
   var deferred = Q.defer()
     , js = (dev ? watchify : browserify)()
@@ -230,11 +228,6 @@ gulp.task('app', function() {
     stdio: 'inherit'
   });
 });
-
-gulp.on('error', function() {
-  console.log('error');
-});
-
 
 function pluckFilesFromJson(prop) {
   return function(file) {
