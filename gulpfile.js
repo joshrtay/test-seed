@@ -13,9 +13,11 @@ var gulp = require('gulp')
   , gaze = require('gaze')
   , path = require('path')
   , _ = require('underscore')
-  , stylus = require('stylus')
-  , dev;
+  , stylus = require('stylus');
 
+
+var DEVELOPMENT = (process.env.NODE_ENV === "development" || 
+                  _.isUndefined(process.env.NODE_ENV));
 
 function maybeLivereload() {
   return tasks.if(dev, tasks.livereload(server));
@@ -28,20 +30,30 @@ function reload(file) {
 }
 
 function maybeWatch(pattern, fn) {
-  dev && gulp.watch(pattern, function(ev) {
-    if (ev.type !== 'deleted')
-      fn(gulp.src(ev.path));
-    else {
-      var stream = es.pause();
-      fn(stream);
-      stream.write(new File({
-        contents: new Buffer(''),
-        path: ev.path
-      }));
-      stream.end();
-    }
-  });
-  fn(gulp.src(pattern));
+  if (DEVELOPMENT) {
+    var deferred = Q.defer();
+    gulp.watch(pattern, function(ev) {
+      if (ev.type !== 'deleted') {
+        var stream = fn(gulp.src(ev.path));
+        stream.on('end', function() {
+          deferred.resolve();
+        })
+      }
+      else {
+        var stream = es.pause();
+        fn(stream);
+        stream.write(new File({
+          contents: new Buffer(''),
+          path: ev.path
+        }));
+        stream.end();
+        deferred.resolve();
+      }
+    });
+    return deferred.promise;
+  } else {
+    return fn(gulp.src(pattern));
+  }
 }
 
 function gulpStylus() {
@@ -55,9 +67,35 @@ function gulpStylus() {
     });
 }
 
-function writeStyle() {
+var styles = {
+  files: {},
+  write: function() {
+    var styleStream = fs.createWriteStream('lib/boot/views/styles.ejs')
+    _.each(_.keys(files), function(file) {
+      styleStream.write('<link href="'+file + '" rel="stylesheet"/>\n');
+    });
+    styleStream.end();
+  },
+  add: function(file) {
+    this.files[file] = true;
+  },
+  remove: function(file) {
+    delete this.files[file] = true;
+  },
+  gulp: function() {
+    var self = this;
+    return es.mapSync(function(file) {
+      if (path.extname(file) !== '.css') return file;
 
-}
+      if (file.contents)
+        styles.add(file.path);
+      else
+        styles.remove(file.path);
+      self.write();
+      return file;
+    });
+  }
+};
 
 /////////////////////////
 // lib: local packages //
@@ -95,6 +133,16 @@ gulp.task('lib-js', ['lib-requires', 'component'], function() {
     }));
   }
   bundle();
+
+  // livereload
+  if (DEVELOPMENT) {
+    gulp.watch(['public/build.js'], 
+      function(ev) {
+        reload(ev.path);
+      });
+  }
+  
+
   return deferred.promise;
 });
 
@@ -108,41 +156,43 @@ gulp.task('lib-requires', function() {
 
 /**
  * lib: stylus
- * development: watches and builds stylus in to css
+ * development: watches and builds stylus into css
  * production: n/a
  */
-//TODO : implement watch
+//TODO : implement cache
 gulp.task('lib-styl', function() {
-  var stylStream = fs.createWriteStream('lib/boot/views/styles.ejs')
-  return gulp.src('lib/**/*.styl')
-    .pipe(gulpStylus())
-    .pipe(tasks.rename(function(dir, base, ext) {
-      return  base + '.css';
-    }))
-    .pipe(es.mapSync(function(file) {
-      file.base = process.cwd();
-      return file;
-    }))
-    .pipe(es.mapSync(function(file) {
-      console.log('file', file.path);
-      stylStream.write('<link href="'+file.path + '" rel="stylesheet"/>');
-      return file;
-    }))
-    .pipe(gulp.dest('public'))
+  return maybeWatch('lib/**/*.styl', function(stream) {
+    stream = stream.pipe(gulpStylus());
+
+    if (DEVELOPMENT) {
+      stream = stream
+        .pipe(tasks.rename(function(dir, base, ext) {
+          return  base + '.css';
+        }))
+        .pipe(es.mapSync(function(file) {
+          file.base = process.cwd();
+          return file;
+        }))
+    } else {
+      stream = stream.pipe(tasks.concat('build.css'));
+    }
+
+    return stream
+      .pipe(styles.gulp()) // add to style list
+      .pipe(gulp.dest('public'));
+  });
+
+  // livereload
+  if (DEVELOPMENT) {
+    gulp.watch(['public/lib/**/*.css'], 
+      function(ev) {
+        reload(ev.path);
+      });
+  }
+  
+  
 });
 
-/**
- * lib: build stylus intp css
- * development: n/a
- * production: build and concat stylus
- */
-// TODO: add minfication
-gulp.task('lib-styl-build', function() {
-  return gulp.src('lib/**/*.styl')
-    .pipe(gulpStylus())
-    .pipe(tasks.concat('build.css'))
-    .pipe(gulp.dest('public'))
-});
 
 /**
  * lib: assets
@@ -150,6 +200,13 @@ gulp.task('lib-styl-build', function() {
 gulp.task('lib-assets', function() {
   gulp.src('lib')
     .pipe(tasks.symlink('public'));
+
+  // livereload
+  if (DEVELOPMENT) {
+    gulp.watch('lib/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}', function(ev) {
+      reload(ev.path);
+    });
+  }
 });
 
 gulp.task('lib', function() {
@@ -254,6 +311,7 @@ gulp.task('bower-css', function() {
         }))
         .on('error', logError)
         .pipe(tasks.concat('bower.css'))
+        .pipe(style.gulp()) // add bower to styles list
         .pipe(gulp.dest('public'))
         .on('end', deferred.resolve);
     }));
@@ -290,10 +348,12 @@ gulp.task('bower', function() {
 // development: watch
 // production: minify
 gulp.task('component', function() {
-  return gulp.src('component.json')
-    .pipe(tasks.component({name: 'index'}))
+  return maybeWatch('component.json', function(stream) {
+    return stream.pipe(tasks.component({name: 'index'}))
     .on('error', function(err) { console.log('error', err); })
+    .pipe(styles.gulp())
     .pipe(gulp.dest('public/components/'))
+  })
 });
 
 ///////////
@@ -312,31 +372,19 @@ gulp.task('default', ['clean'], function() {
 });
 
 gulp.task('dev', function() {
-  dev = true;
+  DEVELOPMENT = true;
   server.listen(35729, function() {
     gulp.run('default', function() {
       gulp.run('app');
     });
   });
 
-  // TODO: just watch component.json ?
-  gulp.watch(['components/**/*', 'components/*'], function() {
-    gulp.run('component');
-  });
-  
   gulp.watch(['lib/**/package.json'],
     function() { gulp.run('app'); });
   
   gulp.run('watchDeps');
   
-  gulp.watch([
-    'lib/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}',
-    'public/build.js',
-    'public/build.css'], 
-    function(ev) {
-      console.log('reload');
-      reload(ev.path);
-    });
+  
 });
 
 var app;
