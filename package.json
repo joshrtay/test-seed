@@ -42,7 +42,9 @@
     "gulp-grep-stream": "0.0.1",
     "gulp-util": "~2.2.9",
     "component": "~0.19.3",
-    "gulp": "~3.3.0"
+    "gulp": "~3.3.0",
+    "ejs": "~0.8.5",
+    "stylus": "~0.42.0"
   },
   "devDependencies": {
     "grunt-contrib-jasmine": "~0.5.2",

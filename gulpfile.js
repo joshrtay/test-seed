@@ -13,6 +13,7 @@ var gulp = require('gulp')
   , gaze = require('gaze')
   , path = require('path')
   , _ = require('underscore')
+  , stylus = require('stylus')
   , dev;
 
 
@@ -43,11 +44,37 @@ function maybeWatch(pattern, fn) {
   fn(gulp.src(pattern));
 }
 
+function gulpStylus() {
+  return es.map(function(file, cb) {
+      var styl = file.contents.toString('utf8');
+      stylus.render(styl, {filename: file.path}, function(err, css) {
+        if (err) throw err;
+        file.contents = new Buffer(css);
+        cb(null, file)
+      })
+    });
+}
+
+function writeStyle() {
+
+}
+
+/////////////////////////
+// lib: local packages //
+/////////////////////////
+
 var browserResolve = require('browser-resolve')
   , moduleDeps = require('module-deps')
   , builtinLibs = require('repl')._builtinLibs;
 
-gulp.task('browserify', ['clean', 'link', 'component'], function() {
+
+/**
+ * cleint side javascript
+ * development: watches and builds
+ * production: builds
+ */
+// TODO: move bower into it's own build
+gulp.task('lib-js', ['lib-requires', 'component'], function() {
   var deferred = Q.defer()
     , js = (dev ? watchify : browserify)()
     , b = js.transform(require('./grunt/browserify-transforms/dereqify.js'))
@@ -71,6 +98,73 @@ gulp.task('browserify', ['clean', 'link', 'component'], function() {
   return deferred.promise;
 });
 
+/**
+ * enable `lib/...` requires shortcut
+ */
+gulp.task('lib-requires', function() {
+  gulp.src('lib')
+    .pipe(tasks.symlink('node_modules'));
+})
+
+/**
+ * lib: stylus
+ * development: watches and builds stylus in to css
+ * production: n/a
+ */
+//TODO : implement watch
+gulp.task('lib-styl', function() {
+  var stylStream = fs.createWriteStream('lib/boot/views/styles.ejs')
+  return gulp.src('lib/**/*.styl')
+    .pipe(gulpStylus())
+    .pipe(tasks.rename(function(dir, base, ext) {
+      return  base + '.css';
+    }))
+    .pipe(es.mapSync(function(file) {
+      file.base = process.cwd();
+      return file;
+    }))
+    .pipe(es.mapSync(function(file) {
+      console.log('file', file.path);
+      stylStream.write('<link href="'+file.path + '" rel="stylesheet"/>');
+      return file;
+    }))
+    .pipe(gulp.dest('public'))
+});
+
+/**
+ * lib: build stylus intp css
+ * development: n/a
+ * production: build and concat stylus
+ */
+// TODO: add minfication
+gulp.task('lib-styl-build', function() {
+  return gulp.src('lib/**/*.styl')
+    .pipe(gulpStylus())
+    .pipe(tasks.concat('build.css'))
+    .pipe(gulp.dest('public'))
+});
+
+/**
+ * lib: assets
+ */
+gulp.task('lib-assets', function() {
+  gulp.src('lib')
+    .pipe(tasks.symlink('public'));
+});
+
+gulp.task('lib', function() {
+  gulp.run('lib-js');
+  gulp.run('lib-styl');
+  gulp.run('lib-assets');
+});
+
+
+
+/**
+ * server side javascript
+ * development: watches and restarts server
+ * production: n/a
+ */
 gulp.task('watchDeps', function() {
   gaze([], function() {
     var self = this
@@ -120,27 +214,28 @@ function urlRewriter(file) {
   });
 }
 
-gulp.task('styl', function() {
-  return gulp.src('lib/**/*.styl')
-    .pipe(es.mapSync(function(file) {
-      var css = file.contents.toString('utf8');
-      file.contents = new Buffer(rework(css)
-        .use(rework.mixin(require('rework-mixins')))
-        .use(rework.ease())
-        .use(rework.colors())
-        .use(rework.references())
-        .use(rework.at2x())
-        .use(rework.extend())
-        .use(urlRewriter(file))
-        .toString({sourcemap: true}));
-      return file;
-    }))
-    .pipe(tasks.autoprefixer('last 2 versions'))
-    .pipe(tasks.concat('build.css'))
-    .pipe(gulp.dest('public'))
-});
 
-gulp.task('bower-styl', function() {
+
+////////////////////
+// bower packages //
+////////////////////
+
+/**
+ * build bower js
+ * development: watch and build
+ * production: build and minify
+ */
+// performed by browserify
+
+/**
+ * build bower css
+ * development: watch, build and concat css
+ * production: build, concat and minify css
+ */
+// TODO: 
+// watch in dev mode
+// minifiy in production
+gulp.task('bower-css', function() {
   var deferred = Q.defer();
   gulp.src('bower/**/bower.json')
     .pipe(es.through(pluckFilesFromJson('main')))
@@ -163,8 +258,37 @@ gulp.task('bower-styl', function() {
         .on('end', deferred.resolve);
     }));
     return deferred.promise;
+});
+
+/**
+ * bower: assets
+ */
+gulp.task('bower-assets', function() {
+  gulp.src('bower')
+    .pipe(tasks.symlink('public'));
+});
+
+/**
+ * bower: js, css and assets
+ */
+gulp.task('bower', function() {
+  gulp.run('bower-css');
+  gulp.run('bower-assets');
 })
 
+
+////////////////////////
+// component packages //
+////////////////////////
+
+/**
+ * build component js, css and assets
+ * development: watch and build
+ * production: build and minfiy
+ */
+// TODO:
+// development: watch
+// production: minify
 gulp.task('component', function() {
   return gulp.src('component.json')
     .pipe(tasks.component({name: 'index'}))
@@ -172,25 +296,20 @@ gulp.task('component', function() {
     .pipe(gulp.dest('public/components/'))
 });
 
+///////////
+// setup //
+///////////
+
 gulp.task('clean', function() {
   return gulp.src('public/*', {read: false})
     .pipe(tasks.clean());
 });
 
-gulp.task('link', function() {
-  gulp.src('lib')
-    .pipe(tasks.symlink('node_modules'));
-  gulp.src('bower')
-    .pipe(tasks.symlink('public'));
-  gulp.src('lib')
-    .pipe(tasks.symlink('public'));
+
+gulp.task('default', ['clean'], function() {
+  gulp.run('bower');
+  gulp.run('lib'); // lib runs component
 });
-
-
-gulp.task('default', ['link', 'clean', 'component', 
-  'styl',
-  'bower-styl',
-  'browserify']);
 
 gulp.task('dev', function() {
   dev = true;
@@ -200,6 +319,7 @@ gulp.task('dev', function() {
     });
   });
 
+  // TODO: just watch component.json ?
   gulp.watch(['components/**/*', 'components/*'], function() {
     gulp.run('component');
   });
@@ -210,10 +330,11 @@ gulp.task('dev', function() {
   gulp.run('watchDeps');
   
   gulp.watch([
-    'lib/**/*.(gif|png|jpg|jpeg|tiff|bmp|ico)',
+    'lib/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}',
     'public/build.js',
     'public/build.css'], 
     function(ev) {
+      console.log('reload');
       reload(ev.path);
     });
 });
