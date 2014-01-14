@@ -11,14 +11,6 @@
     "browserify": "~2.35.4",
     "debowerify": "~0.3.0",
     "esprima": "~1.0.4",
-    "grunt-contrib-copy": "~0.4.1",
-    "grunt-contrib-sass": "~0.5.1",
-    "grunt-symlink": "~0.4.0",
-    "grunt-shell": "~0.6.1",
-    "grunt-contrib-clean": "~0.5.0",
-    "grunt-browserify": "~1.2.12",
-    "grunt-contrib-uglify": "~0.2.7",
-    "grunt-contrib-cssmin": "~0.7.0",
     "gulp-clean": "~0.2.0",
     "gulp-symlink": "~0.1.5",
     "gulp-load-tasks": "~0.1.1",
@@ -47,13 +39,6 @@
     "stylus": "~0.42.0"
   },
   "devDependencies": {
-    "grunt-contrib-jasmine": "~0.5.2",
-    "grunt-protractor-runner": "~0.2.0",
-    "grunt": "~0.4.1",
-    "grunt-develop": "~0.2.2",
-    "grunt-contrib-watch": "~0.5.3",
     "request": "~2.27.0",
-    "time-grunt": "~0.1.1",
-    "load-grunt-tasks": "~0.2.0"
   }
 }
