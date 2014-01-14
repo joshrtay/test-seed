@@ -3,7 +3,7 @@ var gulp = require('gulp')
   , autoprefixer = require('autoprefixer')
   , es = require('event-stream')
   , rework = require('rework')
-  , server = require('tiny-lr')()
+  , lr = require('tiny-lr')
   , File = require('vinyl')
   , child_process = require('child_process')
   , watchify = require('watchify')
@@ -15,12 +15,14 @@ var gulp = require('gulp')
   , _ = require('underscore')
   , stylus = require('stylus');
 
+var gaze = require('gaze');
 
 var DEVELOPMENT = (process.env.NODE_ENV === "development" || 
                   _.isUndefined(process.env.NODE_ENV));
+var server = null;
 
 function maybeLivereload() {
-  return tasks.if(dev, tasks.livereload(server));
+  return tasks.if(server, tasks.livereload(server));
 }
 
 function reload(file) {
@@ -29,17 +31,26 @@ function reload(file) {
     stream.write(new File({path: file || ''}));
 }
 
+function liveReload(pattern) {
+  if(server) {
+    gulp.watch([pattern], 
+      function(ev) {
+        server.changed({
+          body: {
+            files: [ev.path]
+          }
+        });
+      });
+  }
+}
+
 function maybeWatch(pattern, fn) {
+
   if (DEVELOPMENT) {
-    var deferred = Q.defer();
     gulp.watch(pattern, function(ev) {
       if (ev.type !== 'deleted') {
-        var stream = fn(gulp.src(ev.path));
-        stream.on('end', function() {
-          deferred.resolve();
-        })
-      }
-      else {
+        fn(gulp.src(ev.path));
+      } else {
         var stream = es.pause();
         fn(stream);
         stream.write(new File({
@@ -47,13 +58,10 @@ function maybeWatch(pattern, fn) {
           path: ev.path
         }));
         stream.end();
-        deferred.resolve();
       }
     });
-    return deferred.promise;
-  } else {
-    return fn(gulp.src(pattern));
   }
+  return fn(gulp.src(pattern));
 }
 
 function gulpStylus() {
@@ -67,11 +75,13 @@ function gulpStylus() {
     });
 }
 
+
+
 var styles = {
   files: {},
   write: function() {
     var styleStream = fs.createWriteStream('lib/boot/views/styles.ejs')
-    _.each(_.keys(files), function(file) {
+    _.each(_.keys(this.files), function(file) {
       styleStream.write('<link href="'+file + '" rel="stylesheet"/>\n');
     });
     styleStream.end();
@@ -80,17 +90,22 @@ var styles = {
     this.files[file] = true;
   },
   remove: function(file) {
-    delete this.files[file] = true;
+    delete this.files[file];
   },
-  gulp: function() {
+  gulp: function(base) {
     var self = this;
     return es.mapSync(function(file) {
-      if (path.extname(file) !== '.css') return file;
+      if (path.extname(file.path) !== '.css') return file;
 
+      var p = file.path;
+      if (base) {
+        p = p.slice(process.cwd().length);
+        p = path.join(base, p);
+      }
       if (file.contents)
-        styles.add(file.path);
+        styles.add(p);
       else
-        styles.remove(file.path);
+        styles.remove(p);
       self.write();
       return file;
     });
@@ -114,7 +129,8 @@ var browserResolve = require('browser-resolve')
 // TODO: move bower into it's own build
 gulp.task('lib-js', ['lib-requires', 'component'], function() {
   var deferred = Q.defer()
-    , js = (dev ? watchify : browserify)()
+    , firstBuild = true
+    , js = (DEVELOPMENT ? watchify : browserify)()
     , b = js.transform(require('./grunt/browserify-transforms/dereqify.js'))
     .transform(require('./grunt/browserify-transforms/deerrorify.js').transform)
     .transform('dehtmlify')
@@ -126,21 +142,23 @@ gulp.task('lib-js', ['lib-requires', 'component'], function() {
 
   function bundle() {
     var wb = b.bundle();
+    try {
+      fs.unlinkSync('public/build.js');
+    } catch(e) {}
+    
     wb.pipe(fs.createWriteStream('public/.build.js'));
     wb.pipe(es.through(function() {}, function() {
       fs.renameSync('public/.build.js', 'public/build.js');
-      deferred.resolve();
+      if (firstBuild) {
+        deferred.resolve();
+        liveReload('public/build.js');
+        firstBuild = false;
+      }
+      
     }));
   }
   bundle();
 
-  // livereload
-  if (DEVELOPMENT) {
-    gulp.watch(['public/build.js'], 
-      function(ev) {
-        reload(ev.path);
-      });
-  }
   
 
   return deferred.promise;
@@ -156,14 +174,15 @@ gulp.task('lib-requires', function() {
 
 /**
  * lib: stylus
- * development: watches and builds stylus into css
- * production: n/a
+ * development: watches and compiles stylus into css
+ * production: compiles, concats and minifies css
  */
-//TODO : implement cache
+// TODO: minify in production
+var replay = require('gulp-replay');
+var libStyleReplay = replay();
 gulp.task('lib-styl', function() {
-  return maybeWatch('lib/**/*.styl', function(stream) {
+  var stream = maybeWatch('lib/**/*.styl', function(stream) {
     stream = stream.pipe(gulpStylus());
-
     if (DEVELOPMENT) {
       stream = stream
         .pipe(tasks.rename(function(dir, base, ext) {
@@ -171,10 +190,14 @@ gulp.task('lib-styl', function() {
         }))
         .pipe(es.mapSync(function(file) {
           file.base = process.cwd();
+          file.path = file.path.replace('lib', 'lib-build');
           return file;
         }))
+        
     } else {
-      stream = stream.pipe(tasks.concat('build.css'));
+      stream = stream
+        .pipe(libStyleReplay())
+        .pipe(tasks.concat('build.css'));
     }
 
     return stream
@@ -182,15 +205,7 @@ gulp.task('lib-styl', function() {
       .pipe(gulp.dest('public'));
   });
 
-  // livereload
-  if (DEVELOPMENT) {
-    gulp.watch(['public/lib/**/*.css'], 
-      function(ev) {
-        reload(ev.path);
-      });
-  }
-  
-  
+  return stream;
 });
 
 
@@ -202,11 +217,8 @@ gulp.task('lib-assets', function() {
     .pipe(tasks.symlink('public'));
 
   // livereload
-  if (DEVELOPMENT) {
-    gulp.watch('lib/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}', function(ev) {
-      reload(ev.path);
-    });
-  }
+  liveReload('lib/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}');
+
 });
 
 gulp.task('lib', function() {
@@ -217,12 +229,133 @@ gulp.task('lib', function() {
 
 
 
+function urlRewriter(file) {
+  return rework.url(function(url) {
+    var abs = path.resolve(path.dirname(file.path), url);
+    return abs.slice(process.cwd().length);
+  });
+}
+
+
+
+////////////////////
+// bower packages //
+////////////////////
+
+/**
+ * build bower js
+ * development: watch and build
+ * production: build and minify
+ */
+// performed by browserify
+
+/**
+ * build bower css
+ * development: watch, build and concat css
+ * production: build, concat and minify css
+ */
+// TODO: 
+// minifiy in production
+var bowerStyleReplay = replay();
+gulp.task('bower-css', function() {
+  var deferred = Q.defer();
+  maybeWatch('bower.json', function(stream) {
+    stream
+      .pipe(es.through(pluckFilesFromJson('dependencies')))
+      .pipe(es.mapSync(function(name) {
+        return path.join('bower', name, '/bower.json');
+      }))
+      .pipe(es.writeArray(function(err, arr) {
+        if (arr.length === 0) return deferred.resolve();
+        gulp.src(arr)
+          .pipe(es.through(pluckFilesFromJson('main')))
+          .pipe(es.writeArray(function(err, arr) {
+            if (arr.length === 0) {
+              try {
+                fs.unlinkSync('public/bower.css');
+              } catch(e) {}
+              styles.remove('bower.css');
+              styles.write();
+              return deferred.resolve();
+            }
+            gulp.src(arr)
+              .pipe(tasks['grep-stream']('/**/*.css'))
+              .pipe(es.mapSync(function(file) {
+                var css = file.contents.toString('utf8')
+                  , res = rework(css)
+                  .use(urlRewriter(file))
+                  .toString({sourcemap: true});
+                
+                file.contents = new Buffer(res);
+                return file;
+              }))
+            .on('error', logError)
+            .pipe(tasks.concat('bower.css'))
+            .pipe(gulp.dest('public'))
+            .on('end', function() {
+              deferred.resolve();
+              styles.add('bower.css');
+              styles.write();
+            });
+
+          }));
+      }));
+        
+  });
+
+  liveReload('public/bower.css');
+
+  return deferred.promise;
+});
+
+/**
+ * bower: assets
+ */
+gulp.task('bower-assets', function() {
+  gulp.src('bower')
+    .pipe(tasks.symlink('public'));
+
+    // livereload
+  liveReload('bower/**/*.{gif,png,jpg,jpeg,tiff,bmp,ico,ejs}');
+});
+
+/**
+ * bower: js, css and assets
+ */
+gulp.task('bower', function() {
+  gulp.run('bower-css');
+  gulp.run('bower-assets');
+})
+
+
+////////////////////////
+// component packages //
+////////////////////////
+
+/**
+ * build component js, css and assets
+ * development: watch and build
+ * production: build and minfiy
+ */
+// TODO:
+// development: remove styles doesn't work
+// production: minify
+gulp.task('component', function() {
+  return maybeWatch('component.json', function(stream) {
+    return stream.pipe(tasks.component({name: 'index'}))
+    .on('error', function(err) { console.log('error', err); })
+    .pipe(styles.gulp('public/components/'))
+    .pipe(gulp.dest('public/components/'))
+  })
+});
+
+
 /**
  * server side javascript
  * development: watches and restarts server
  * production: n/a
  */
-gulp.task('watchDeps', function() {
+gulp.task('js-server-watch', function() {
   gaze([], function() {
     var self = this
       , boot = __dirname + '/app.js';
@@ -264,98 +397,6 @@ gulp.task('watchDeps', function() {
   });
 });
 
-function urlRewriter(file) {
-  return rework.url(function(url) {
-    var abs = path.resolve(path.dirname(file.path), url);
-    return abs.slice(process.cwd().length);
-  });
-}
-
-
-
-////////////////////
-// bower packages //
-////////////////////
-
-/**
- * build bower js
- * development: watch and build
- * production: build and minify
- */
-// performed by browserify
-
-/**
- * build bower css
- * development: watch, build and concat css
- * production: build, concat and minify css
- */
-// TODO: 
-// watch in dev mode
-// minifiy in production
-gulp.task('bower-css', function() {
-  var deferred = Q.defer();
-  gulp.src('bower/**/bower.json')
-    .pipe(es.through(pluckFilesFromJson('main')))
-    .pipe(es.writeArray(function(err, arr) {
-      if (arr.length === 0) return deferred.resolve();
-      gulp.src(arr)
-        .pipe(tasks['grep-stream']('/**/*.css'))
-        .pipe(es.mapSync(function(file) {
-          var css = file.contents.toString('utf8')
-            , res = rework(css)
-            .use(urlRewriter(file))
-            .toString({sourcemap: true});
-          
-          file.contents = new Buffer(res);
-          return file;
-        }))
-        .on('error', logError)
-        .pipe(tasks.concat('bower.css'))
-        .pipe(style.gulp()) // add bower to styles list
-        .pipe(gulp.dest('public'))
-        .on('end', deferred.resolve);
-    }));
-    return deferred.promise;
-});
-
-/**
- * bower: assets
- */
-gulp.task('bower-assets', function() {
-  gulp.src('bower')
-    .pipe(tasks.symlink('public'));
-});
-
-/**
- * bower: js, css and assets
- */
-gulp.task('bower', function() {
-  gulp.run('bower-css');
-  gulp.run('bower-assets');
-})
-
-
-////////////////////////
-// component packages //
-////////////////////////
-
-/**
- * build component js, css and assets
- * development: watch and build
- * production: build and minfiy
- */
-// TODO:
-// development: watch
-// production: minify
-gulp.task('component', function() {
-  return maybeWatch('component.json', function(stream) {
-    return stream.pipe(tasks.component({name: 'index'}))
-    .on('error', function(err) { console.log('error', err); })
-    .pipe(styles.gulp())
-    .pipe(gulp.dest('public/components/'))
-  })
-});
-
 ///////////
 // setup //
 ///////////
@@ -373,6 +414,7 @@ gulp.task('default', ['clean'], function() {
 
 gulp.task('dev', function() {
   DEVELOPMENT = true;
+  server = lr();
   server.listen(35729, function() {
     gulp.run('default', function() {
       gulp.run('app');
@@ -382,7 +424,7 @@ gulp.task('dev', function() {
   gulp.watch(['lib/**/package.json'],
     function() { gulp.run('app'); });
   
-  gulp.run('watchDeps');
+  gulp.run('js-server-watch');
   
   
 });
@@ -410,6 +452,10 @@ function pluckFilesFromJson(prop) {
     if(_.isArray(json[prop])) {
       json[prop].forEach(function(p) {
         self.emit('data', path.resolve(path.dirname(file.path), p));
+      });
+    } else if (_.isObject(json[prop])) {
+      _.each(json[prop], function(value, name){
+        self.emit('data', name);
       });
     }
   };
