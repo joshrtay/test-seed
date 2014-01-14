@@ -131,12 +131,12 @@ gulp.task('lib-js', ['lib-requires', 'component'], function() {
   var deferred = Q.defer()
     , firstBuild = true
     , js = (DEVELOPMENT ? watchify : browserify)()
-    , b = js.transform(require('./grunt/browserify-transforms/dereqify.js'))
-    .transform(require('./grunt/browserify-transforms/deerrorify.js').transform)
+    , b = js.transform(require('./browserify/dereqify.js'))
+    .transform(require('./browserify/derrorify.js').transform)
     .transform('dehtmlify')
     .transform('decomponentify')
     .transform('debowerify')
-    .on('postbundle', require('./grunt/browserify-transforms/deerrorify.js').postBundleCb)
+    .on('postbundle', require('./browserify/derrorify.js').postBundleCb)
     .add('./lib/boot/main.js')
     .on('update', bundle);
 
@@ -158,8 +158,6 @@ gulp.task('lib-js', ['lib-requires', 'component'], function() {
     }));
   }
   bundle();
-
-  
 
   return deferred.promise;
 });
@@ -434,6 +432,7 @@ gulp.task('app', function() {
   if(app) {
     app.kill();
     setTimeout(function() {
+      console.log('reload');
       reload('server');
     }, 500);
   }
